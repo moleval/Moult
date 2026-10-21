@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Moult Диск — Защищённая синхронизация ПК (Windows) и Android</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Боковая панель в стиле Яндекс.Диска -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">M</div>
+        <div>
+          <div class="brand-title">Moult Диск</div>
+          <div class="brand-sub">Windows PC &amp; Android Sync</div>
+        </div>
+      </div>
+
+      <div class="role-card">
+        <div class="role-label">Роль этого компьютера:</div>
+        <select id="pcRoleSelect" class="role-select">
+          <option value="home_master">🏠 Главный ПК (Домашний)</option>
+          <option value="work_client">💼 Рабочий ПК (Слив файлов)</option>
+        </select>
+        <div id="roleHint" class="role-hint">
+          Принимает слив с Рабочего ПК и фото Камеры Android
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-btn active" data-tab="folders">
+          <span class="nav-icon">📁</span>
+          <span>Папки и Диск</span>
+          <span class="nav-badge" id="navFoldersCount">5</span>
+        </button>
+        <button class="nav-btn" data-tab="inspector">
+          <span class="nav-icon">🗁</span>
+          <span>Файлы и Слив (Стенд)</span>
+        </button>
+        <button class="nav-btn" data-tab="security">
+          <span class="nav-icon">🛡</span>
+          <span>Безопасность (TLS 1.3)</span>
+        </button>
+        <button class="nav-btn" data-tab="devices">
+          <span class="nav-icon">📱</span>
+          <span>2-й ПК и Android (QR)</span>
+        </button>
+        <button class="nav-btn" data-tab="versions">
+          <span class="nav-icon">🕓</span>
+          <span>Корзина и Версии</span>
+          <span class="nav-badge" id="navVersionsCount">0</span>
+        </button>
+      </nav>
+
+      <!-- Индикатор диска в стиле Яндекс.Диска -->
+      <div class="disk-widget">
+        <div class="disk-header">
+          <span>Локальный диск ПК</span>
+          <strong id="diskFreeText">-- ГБ свободно</strong>
+        </div>
+        <div class="disk-bar-bg">
+          <div id="diskBarFill" class="disk-bar-fill" style="width: 25%"></div>
+        </div>
+        <div class="disk-meta" id="diskUsedText">Занято -- из -- ГБ</div>
+        <div class="security-pill">
+          <span class="dot-online"></span>
+          <span>Канал: mTLS 1.3 + SHA-256</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Основная область -->
+    <main class="main-area">
+      <!-- Верхняя панель быстрых действий -->
+      <header class="topbar">
+        <div class="topbar-status">
+          <div class="status-indicator" id="globalSyncDot"></div>
+          <div>
+            <div class="topbar-title" id="deviceNameHeader">Загрузка...</div>
+            <div class="topbar-subtitle" id="securitySubHeader">
+              Взаимная аутентификация сертификатов X.509 • Контроль целостности SHA-256
+            </div>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <button class="btn btn-secondary" id="btnToggleTrayPopup" title="Показать всплывающее окно трея Windows (как у Яндекс.Диска)">
+            🔔 Окно в трее Windows
+          </button>
+          <button class="btn btn-primary" id="btnSyncAll">
+            🔄 Синхронизировать все папки
+          </button>
+        </div>
+      </header>
+
+      <div id="toastBanner" class="toast-banner hidden"></div>
+
+      <!-- ВКЛАДКА 1: ПАПКИ СИНХРОНИЗАЦИИ (Яндекс.Диск + Dropsync) -->
+      <section class="tab-panel active" id="tab-folders">
+        <div class="summary-cards">
+          <div class="stat-card">
+            <div class="stat-title">Активных папок</div>
+            <div class="stat-value" id="statFolders">5</div>
+            <div class="stat-desc">Заданные папки ПК и Android</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Файлов под защитой</div>
+            <div class="stat-value" id="statFiles">0</div>
+            <div class="stat-desc">С проверкой хешей SHA-256</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Защита канала</div>
+            <div class="stat-value stat-green">TLS 1.3</div>
+            <div class="stat-desc">AES-256-GCM / Ed25519 mTLS</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Версий в Корзине</div>
+            <div class="stat-value" id="statTrash">0</div>
+            <div class="stat-desc">Защита от случайного удаления</div>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <div>
+            <h2>Настроенные папки синхронизации (логика Dropsync + Яндекс.Диск)</h2>
+            <p class="section-sub">
+              Для каждой папки задаётся направление: <strong>Двусторонняя (↔)</strong>,
+              <strong>Только отправка / Слив файлов (→)</strong> или <strong>Только приём (←)</strong>.
+            </p>
+          </div>
+          <button class="btn btn-outline" id="btnShowAddFolder">+ Добавить свою папку</button>
+        </div>
+
+        <!-- Форма добавления новой папки -->
+        <div id="addFolderModal" class="card form-card hidden">
+          <h3>Добавить новую папку для синхронизации</h3>
+          <div class="form-grid">
+            <div>
+              <label>Название папки</label>
+              <input type="text" id="newFolderLabel" placeholder="Например: Проекты и чертежи" />
+            </div>
+            <div>
+              <label>Режим синхронизации (как в Dropsync)</label>
+              <select id="newFolderMode">
+                <option value="sendreceive">↔ Двусторонняя (Send &amp; Receive)</option>
+                <option value="sendonly">→ Только отправка / Слив файлов (Send Only)</option>
+                <option value="receiveonly">← Только приём / Мастер-копия (Receive Only)</option>
+              </select>
+            </div>
+            <div>
+              <label>Локальный путь на ПК (опционально)</label>
+              <input type="text" id="newFolderPath" placeholder="Автоматически в папке Moult Диск" />
+            </div>
+            <div>
+              <label>Политика хранения старых версий</label>
+              <select id="newFolderVersioning">
+                <option value="simple">Хранить последние 15 версий файла</option>
+                <option value="trashcan">Корзина (хранить удалённые 30 дней)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-checks">
+            <label class="check-item">
+              <input type="checkbox" id="newFolderEncrypted" />
+              <span>Включить сквозное шифрование AES-256-GCM для папки</span>
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="newFolderProcessGuard" />
+              <span>Защита базы данных (Process Guard — пауза при открытой бухгалтерии)</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="btnCreateFolder">Создать папку</button>
+            <button class="btn btn-secondary" id="btnCancelFolder">Отмена</button>
+          </div>
+        </div>
+
+        <!-- Список карточек папок -->
+        <div id="foldersGrid" class="folders-grid"></div>
+
+        <!-- Лента последних событий (как в Яндекс.Диске) -->
+        <div class="card activity-card">
+          <div class="section-header compact">
+            <h3>Лента активности и переданных файлов (с контролем SHA-256)</h3>
+          </div>
+          <div id="recentEventsList" class="events-list"></div>
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 2: ДВУХПАНЕЛЬНЫЙ ИНСПЕКТОР И ТЕСТ СЛИВА ФАЙЛОВ -->
+      <section class="tab-panel" id="tab-inspector">
+        <div class="section-header">
+          <div>
+            <h2>Файловый менеджер и проверка режимов синхронизации</h2>
+            <p class="section-sub">
+              Выберите папку, чтобы посмотреть файлы на <strong>Этом ПК</strong> и на <strong>Втором устройстве (Рабочий ПК / Android)</strong>,
+              добавить тестовый файл или зашифровать его паролем AES-256-GCM.
+            </p>
+          </div>
+          <div class="inspector-controls">
+            <select id="inspectorFolderSelect" class="role-select"></select>
+            <button class="btn btn-primary" id="btnSyncCurrentFolder">🔄 Синхронизировать выбранную папку</button>
+          </div>
+        </div>
+
+        <div id="inspectorFolderBanner" class="folder-mode-banner"></div>
+
+        <div class="dual-pane">
+          <!-- Левая панель: Этот ПК -->
+          <div class="card pane-card">
+            <div class="pane-header">
+              <div>
+                <h3>💻 Папка на этом ПК</h3>
+                <div class="pane-path" id="localPanePath">--</div>
+              </div>
+              <button class="btn btn-sm btn-outline" id="btnOpenExplorerInspector">Открыть в Проводнике</button>
+            </div>
+
+            <div class="quick-add-box">
+              <input type="text" id="localFileName" placeholder="Имя файла (напр. Договор_2026.txt)" />
+              <input type="text" id="localFileContent" placeholder="Содержимое файла..." />
+              <input type="password" id="localFilePass" placeholder="Пароль AES-256 (если нужен сейф)" />
+              <button class="btn btn-sm btn-primary" id="btnAddLocalFile">+ Создать на этом ПК</button>
+            </div>
+
+            <div id="localFilesTable" class="files-list"></div>
+          </div>
+
+          <!-- Правая панель: Второй ПК / Смартфон Android -->
+          <div class="card pane-card">
+            <div class="pane-header">
+              <div>
+                <h3>🔄 Второй узел (Рабочий ПК / Android Камера)</h3>
+                <div class="pane-path" id="remotePanePath">--</div>
+              </div>
+              <span class="badge badge-tls">Канал TLS 1.3</span>
+            </div>
+
+            <div class="quick-add-box">
+              <input type="text" id="remoteFileName" placeholder="Имя файла (напр. Отчёт_с_работы.txt или IMG_001.jpg)" />
+              <input type="text" id="remoteFileContent" placeholder="Содержимое файла со 2-го ПК / телефона..." />
+              <button class="btn btn-sm btn-secondary" id="btnAddRemoteFile">+ Имитировать приход со 2-го устройства</button>
+            </div>
+
+            <div id="remoteFilesTable" class="files-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 3: БЕЗОПАСНОСТЬ ПЕРЕСЫЛАЕМЫХ ДАННЫХ -->
+      <section class="tab-panel" id="tab-security">
+        <div class="section-header">
+          <div>
+            <h2>Безопасность пересылаемых и хранимых данных</h2>
+            <p class="section-sub">
+              Многоуровневая криптографическая защита при передаче файлов между Главным ПК, Рабочим ПК и Android.
+            </p>
+          </div>
+        </div>
+
+        <div class="security-grid">
+          <div class="card">
+            <h3>1. Защита канала и аутентификация устройств (mTLS 1.3)</h3>
+            <div class="kv-list">
+              <div class="kv-row">
+                <span>Криптографический ID этого ПК (Device ID):</span>
+                <code id="secDeviceId" class="code-box">--</code>
+              </div>
+              <div class="kv-row">
+                <span>Протокол обмена блоками:</span>
+                <strong>Syncthing BEP поверх взаимного TLS 1.3</strong>
+              </div>
+              <div class="kv-row">
+                <span>Набор шифров (Cipher Suite):</span>
+                <strong>TLS_AES_256_GCM_SHA384 / XChaCha20-Poly1305</strong>
+              </div>
+              <div class="kv-row">
+                <span>Контроль целостности каждого файла:</span>
+                <strong>Потоковый SHA-256 до и после передачи</strong>
+              </div>
+            </div>
+
+            <hr class="divider" />
+
+            <h4>Режим сетевой безопасности</h4>
+            <div class="form-grid single-col">
+              <div>
+                <label>Профиль сетевой изоляции</label>
+                <select id="secProfileSelect">
+                  <option value="protected_internet">
+                    🌐 Защищённый Интернет (mTLS 1.3 + сквозное шифрование через NAT)
+                  </option>
+                  <option value="maximum_direct">
+                    🔒 Максимальная изоляция (Только прямые соединения LAN / личный VPN, без релеев)
+                  </option>
+                </select>
+              </div>
+            </div>
+            <div class="form-checks">
+              <label class="check-item">
+                <input type="checkbox" id="secVerifySha256" checked />
+                <span>Проверять контрольные суммы SHA-256 каждого файла после синхронизации</span>
+              </label>
+              <label class="check-item">
+                <input type="checkbox" id="secLocalhostOnly" checked />
+                <span>Блокировать внешний доступ к локальному управляющему API (только 127.0.0.1)</span>
+              </label>
+              <label class="check-item">
+                <input type="checkbox" id="secAutostartWin" checked />
+                <span>Автозапуск в системном трее при входе в Windows (HKCU\...\Run)</span>
+              </label>
+            </div>
+            <button class="btn btn-primary" id="btnSaveSecurity">Сохранить политику безопасности</button>
+          </div>
+
+          <div class="card">
+            <h3>2. Зашифрованное сопряжение ПК (защита от перехвата в мессенджерах)</h3>
+            <p class="card-help">
+              Чтобы связать <strong>Главный домашний ПК</strong> и <strong>Рабочий ПК</strong>, не пересылайте открытые ключи.
+              Сгенерируйте токен, зашифрованный вашим PIN-паролем (<strong>AES-256-GCM + PBKDF2 600 000 итераций</strong>).
+            </p>
+            <div class="form-grid">
+              <div>
+                <label>Придумайте одноразовый пароль / PIN</label>
+                <input type="password" id="pairPinCreate" value="MoultSafe2026!" />
+              </div>
+              <div>
+                <label>Для какого устройства создаём пакет</label>
+                <select id="pairTargetRole">
+                  <option value="work_client">Для Рабочего ПК (режим Слива файлов)</option>
+                  <option value="android_mobile">Для Android смартфона (Камера + Обмен)</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-outline" id="btnGenerateInvite">🔐 Сгенерировать зашифрованный токен сопряжения</button>
+            <textarea id="generatedInviteBox" class="code-textarea" rows="3" readonly placeholder="Здесь появится зашифрованный пакет MOULT-PAIR-V1:..."></textarea>
+
+            <hr class="divider" />
+            <h4>Импорт токена сопряжения на втором ПК</h4>
+            <div class="form-grid">
+              <div>
+                <label>Зашифрованный токен (MOULT-PAIR-V1:...)</label>
+                <input type="text" id="pairTokenImport" placeholder="Вставьте токен MOULT-PAIR-V1:..." />
+              </div>
+              <div>
+                <label>Пароль / PIN расшифровки</label>
+                <input type="password" id="pairPinImport" value="MoultSafe2026!" />
+              </div>
+            </div>
+            <button class="btn btn-secondary" id="btnImportInvite">Проверить подлинность и подключить ПК</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>3. Автоматически сгенерированный конфигурационный файл движка Syncthing (config.xml)</h3>
+          <p class="card-help">
+            Этот файл автоматически записывается вашей программой для фонового демона <code>syncthing.exe</code>.
+          </p>
+          <pre id="syncthingXmlBox" class="xml-preview"></pre>
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 4: УСТРОЙСТВА, ВТОРОЙ ПК И ANDROID (QR) -->
+      <section class="tab-panel" id="tab-devices">
+        <div class="section-header">
+          <div>
+            <h2>Подключение Рабочего ПК и Android-смартфона (Камера + Папки)</h2>
+            <p class="section-sub">
+              На Android можно сразу использовать готовое приложение <strong>Syncthing-Fork</strong> (отсканировав QR-код ниже)
+              или наш будущий специализированный APK-клиент Moult Android.
+            </p>
+          </div>
+        </div>
+
+        <div class="security-grid">
+          <div class="card qr-card">
+            <h3>QR-код этого ПК для Android</h3>
+            <img id="qrCodeImage" class="qr-image" src="" alt="QR-код Device ID" />
+            <div class="qr-caption">
+              Отсканируйте этот QR-код в Android-приложении, чтобы привязать телефон к Главному ПК по протоколу TLS 1.3.
+            </div>
+            <code id="qrDeviceIdText" class="code-box"></code>
+          </div>
+
+          <div class="card">
+            <h3>Подключённые устройства (Главный ПК, Рабочий ПК, Android)</h3>
+            <div id="devicesList" class="devices-list"></div>
+
+            <hr class="divider" />
+            <h4>Добавить устройство по Device ID (с проверкой контрольной суммы Luhn mod 32)</h4>
+            <div class="form-grid">
+              <div>
+                <label>Название устройства</label>
+                <input type="text" id="newDevName" placeholder="Напр. Ноутбук или Xiaomi 14" />
+              </div>
+              <div>
+                <label>Тип устройства</label>
+                <select id="newDevRole">
+                  <option value="work_client">💼 Рабочий ПК / Ноутбук</option>
+                  <option value="android_mobile">📱 Android Смартфон</option>
+                  <option value="home_master">🏠 Главный домашний ПК</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-grid single-col">
+              <div>
+                <label>Device ID (56 символов Base32 с контрольными суммами Luhn)</label>
+                <input type="text" id="newDevId" placeholder="XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" id="btnAddDevice">Добавить доверенное устройство</button>
+              <button class="btn btn-secondary" id="btnValidateDevId">Проверить контрольную сумму ID</button>
+            </div>
+            <div id="devIdValidationResult" class="validation-msg"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 5: КОРЗИНА И ИСТОРИЯ ВЕРСИЙ (Яндекс.Диск) -->
+      <section class="tab-panel" id="tab-versions">
+        <div class="section-header">
+          <div>
+            <h2>Корзина и История версий файлов</h2>
+            <p class="section-sub">
+              При перезаписи или изменении файлов во время синхронизации предыдущие копии автоматически сохраняются здесь.
+              Вы можете восстановить любую версию в 1 клик (критично для документов и баз данных).
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div id="versionsList" class="versions-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Всплывающий виджет системного трея Windows (в правом нижнем углу, как у Яндекс.Диска) -->
+  <div id="trayPopupWidget" class="tray-popup hidden">
+    <div class="tray-popup-header">
+      <div class="tray-popup-title">
+        <span class="brand-logo small">M</span>
+        <div>
+          <strong>Moult Диск (Трей Windows)</strong>
+          <div class="tray-sub" id="trayStatusText">Все файлы синхронизированы • TLS 1.3</div>
+        </div>
+      </div>
+      <button class="btn-close" id="btnCloseTrayPopup">✕</button>
+    </div>
+    <div class="tray-popup-body">
+      <div class="tray-quick-btns">
+        <button class="btn btn-sm btn-primary" id="trayBtnSyncNow">🔄 Синхр. сейчас</button>
+        <button class="btn btn-sm btn-outline" id="trayBtnOpenFolder">📂 Папка Диска</button>
+      </div>
+      <div class="tray-recent-title">Последние синхронизированные файлы:</div>
+      <div id="trayRecentList" class="tray-recent-list"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

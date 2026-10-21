@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments & build artifacts
+.venv/
+venv/
+env/
+build/
+dist/
+*.spec
+
+# Binaries & runtime data
+bin/
+*.exe
+*.zip
+*.tar.gz
+.moult_data/
+sync_storage/
+
+# OS & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.pytest_cache/
