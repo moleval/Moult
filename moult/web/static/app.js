@@ -118,6 +118,7 @@ function renderFoldersGrid(folders) {
             <span>📁 ${f.label}</span>
           </div>
           <div class="folder-path">${f.path}</div>
+          <div style="font-size:11px; color:#64748b; margin-top:2px;">ID папки (общий для ПК): <code>${f.id}</code></div>
         </div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <span class="badge ${meta.badgeClass}">${meta.label}</span>
@@ -136,10 +137,16 @@ function renderFoldersGrid(folders) {
 
       <div class="folder-actions">
         <button class="btn btn-sm btn-secondary btn-inspect-folder" data-folder-id="${f.id}">
-          🗁 Файлы и проверка слива (${f.files_count})
+          🗁 Файлы (${f.files_count})
         </button>
         <button class="btn btn-sm btn-outline btn-open-explorer" data-folder-id="${f.id}">
-          📂 Открыть в Проводнике
+          📂 Проводник
+        </button>
+        <button class="btn btn-sm btn-secondary btn-edit-folder" data-folder-id="${f.id}">
+          ✏️ Изменить путь
+        </button>
+        <button class="btn btn-sm btn-secondary btn-delete-folder" data-folder-id="${f.id}" title="Убрать папку из синхронизации (файлы на диске не удаляются)">
+          🗑 Убрать
         </button>
       </div>
 
@@ -188,6 +195,37 @@ function renderFoldersGrid(folders) {
       const fid = e.currentTarget.getAttribute("data-folder-id");
       const res = await apiRequest(`/api/folders/${fid}/open-explorer`, "POST");
       showToast(`Открыта папка: ${res.path}`);
+    });
+  });
+
+  container.querySelectorAll(".btn-edit-folder").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const fid = e.currentTarget.getAttribute("data-folder-id");
+      const folder = folders.find((x) => x.id === fid);
+      if (!folder) return;
+      document.getElementById("folderModalTitle").textContent = `Изменить папку: ${folder.label}`;
+      document.getElementById("newFolderId").value = folder.id;
+      document.getElementById("newFolderLabel").value = folder.label;
+      document.getElementById("newFolderPath").value = folder.path;
+      document.getElementById("newFolderMode").value = folder.sync_mode;
+      document.getElementById("newFolderVersioning").value = folder.versioning_mode || "simple";
+      document.getElementById("newFolderEncrypted").checked = Boolean(folder.encryption_enabled);
+      document.getElementById("newFolderProcessGuard").checked = Boolean(folder.process_guard_enabled);
+      const modal = document.getElementById("addFolderModal");
+      modal.classList.remove("hidden");
+      modal.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  });
+
+  container.querySelectorAll(".btn-delete-folder").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const fid = e.currentTarget.getAttribute("data-folder-id");
+      const folder = folders.find((x) => x.id === fid);
+      if (!folder) return;
+      const res = await apiRequest(`/api/folders/${fid}`, "DELETE");
+      state.overview = res.overview;
+      renderAll();
+      showToast(`Папка «${folder.label}» убрана из списка синхронизации (файлы на диске сохранены)`);
     });
   });
 }
@@ -410,33 +448,81 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderAll();
   });
 
-  // Модалка новой папки
+  // Модалка добавления / изменения папки
   document.getElementById("btnShowAddFolder").addEventListener("click", () => {
+    document.getElementById("folderModalTitle").textContent = "Добавить новую папку для синхронизации";
+    document.getElementById("newFolderId").value = "";
+    document.getElementById("newFolderLabel").value = "";
+    document.getElementById("newFolderPath").value = "";
+    document.getElementById("newFolderMode").value = "sendreceive";
     document.getElementById("addFolderModal").classList.toggle("hidden");
   });
   document.getElementById("btnCancelFolder").addEventListener("click", () => {
     document.getElementById("addFolderModal").classList.add("hidden");
   });
+
+  // Автозаполнение названия папки из введённого пути (например, D:\Дистрибутивы -> Дистрибутивы)
+  document.getElementById("newFolderPath").addEventListener("input", (e) => {
+    const val = e.target.value.trim().replace(/[\\/]+$/, "");
+    const labelInput = document.getElementById("newFolderLabel");
+    if (val && !labelInput.value.trim()) {
+      const parts = val.split(/[\\/]/);
+      const last = parts[parts.length - 1];
+      if (last && !last.endsWith(":")) {
+        labelInput.value = last;
+      }
+    }
+  });
+
+  // Кнопка «📂 Обзор...» — открывает системное окно выбора папки Windows
+  document.getElementById("btnPickFolderNative").addEventListener("click", async () => {
+    try {
+      const res = await apiRequest("/api/system/pick-folder", "POST");
+      if (res.selected_path) {
+        document.getElementById("newFolderPath").value = res.selected_path;
+        const parts = res.selected_path.replace(/[\\/]+$/, "").split(/[\\/]/);
+        const last = parts[parts.length - 1];
+        if (last && !document.getElementById("newFolderLabel").value.trim()) {
+          document.getElementById("newFolderLabel").value = last;
+        }
+      } else {
+        showToast("Введите путь вручную в поле (например: D:\\Дистрибутивы)");
+      }
+    } catch (_err) {
+      showToast("Введите путь вручную в поле (например: D:\\Дистрибутивы)");
+    }
+  });
+
   document.getElementById("btnCreateFolder").addEventListener("click", async () => {
-    const label = document.getElementById("newFolderLabel").value.trim();
-    if (!label) {
-      showToast("Укажите название папки", true);
+    const pathVal = document.getElementById("newFolderPath").value.trim();
+    let label = document.getElementById("newFolderLabel").value.trim();
+    const customId = document.getElementById("newFolderId").value.trim();
+
+    if (!label && pathVal) {
+      const parts = pathVal.replace(/[\\/]+$/, "").split(/[\\/]/);
+      label = parts[parts.length - 1] || pathVal;
+    }
+    if (!label && !pathVal) {
+      showToast("Укажите путь к папке (например, D:\\Дистрибутивы) или её название", true);
       return;
     }
     const payload = {
-      label,
+      id: customId || null,
+      label: label || pathVal,
       sync_mode: document.getElementById("newFolderMode").value,
-      path: document.getElementById("newFolderPath").value.trim() || null,
+      path: pathVal || null,
       versioning_mode: document.getElementById("newFolderVersioning").value,
       encryption_enabled: document.getElementById("newFolderEncrypted").checked,
       process_guard_enabled: document.getElementById("newFolderProcessGuard").checked,
     };
     const res = await apiRequest("/api/folders", "POST", payload);
     document.getElementById("addFolderModal").classList.add("hidden");
+    document.getElementById("newFolderId").value = "";
     document.getElementById("newFolderLabel").value = "";
+    document.getElementById("newFolderPath").value = "";
     state.overview = res.overview;
     renderAll();
-    showToast(`Папка «${label}» добавлена в синхронизацию`);
+    showToast(`Папка «${res.folder.label}» (${res.folder.path}) сохранена! ID: ${res.folder.id}`);
   });
 
   // Инспектор файлов

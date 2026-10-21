@@ -628,24 +628,57 @@ class SyncService:
             "sha256": entry.sha256,
         }
 
+    def _slugify_folder_id(self, text: str) -> str:
+        ru_map = {
+            "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+            "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+            "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+            "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+            "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+        }
+        lowered = text.strip().lower()
+        out = []
+        for ch in lowered:
+            if ch in ru_map:
+                out.append(ru_map[ch])
+            elif ch.isalnum():
+                out.append(ch)
+            else:
+                out.append("-")
+        slug = "-".join(part for part in "".join(out).split("-") if part)
+        return f"folder-{slug}" if slug else f"folder-{uuid.uuid4().hex[:6]}"
+
     def add_or_update_folder(self, folder_data: Dict[str, Any]) -> SyncFolder:
-        folder_id = folder_data.get("id") or f"folder-{uuid.uuid4().hex[:6]}"
+        raw_id = (folder_data.get("id") or "").strip()
+        label_str = (folder_data.get("label") or "").strip()
+        path_str = (folder_data.get("path") or "").strip()
+
+        if raw_id:
+            folder_id = raw_id
+        elif label_str:
+            folder_id = self._slugify_folder_id(label_str)
+        elif path_str:
+            folder_id = self._slugify_folder_id(Path(path_str).name or path_str)
+        else:
+            folder_id = f"folder-{uuid.uuid4().hex[:6]}"
+
         existing = next((f for f in self.cm.config.folders if f.id == folder_id), None)
 
         local_base = Path(self.cm.config.root_disk_path)
-        default_path = str(local_base / folder_data.get("label", folder_id))
-        default_paired = str(self.cm.storage_root / "Узел_Репликации" / folder_data.get("label", folder_id))
+        effective_label = label_str or (Path(path_str).name if path_str else folder_id)
+        default_path = str(local_base / effective_label)
+        default_paired = str(self.cm.storage_root / "Узел_Репликации" / effective_label)
 
         if existing:
             for k, v in folder_data.items():
-                if hasattr(existing, k) and v is not None:
+                if hasattr(existing, k) and v is not None and k != "id":
                     setattr(existing, k, v)
             folder = existing
         else:
             folder = SyncFolder(
                 id=folder_id,
-                label=folder_data.get("label", "Новая папка"),
-                path=folder_data.get("path") or default_path,
+                label=effective_label,
+                path=path_str or default_path,
                 paired_local_path=folder_data.get("paired_local_path") or default_paired,
                 sync_mode=SyncMode(folder_data.get("sync_mode", SyncMode.SEND_RECEIVE.value)),
                 category=folder_data.get("category", "pc_sync"),
@@ -666,6 +699,15 @@ class SyncService:
         self.cm.save()
         self.daemon.write_config_files(self.cm.config, self.cm.cert_path, self.cm.key_path)
         return folder
+
+    def delete_folder(self, folder_id: str) -> bool:
+        before = len(self.cm.config.folders)
+        self.cm.config.folders = [f for f in self.cm.config.folders if f.id != folder_id]
+        if len(self.cm.config.folders) < before:
+            self.cm.save()
+            self.daemon.write_config_files(self.cm.config, self.cm.cert_path, self.cm.key_path)
+            return True
+        return False
 
     def add_peer_device(self, name: str, device_id: str, role: DeviceRole) -> PeerDevice:
         ok, normalized_or_err = validate_device_id(device_id)
@@ -728,6 +770,7 @@ class SyncService:
     def generate_encrypted_pairing_invite(self, pin_code: str, target_role: str = "work_client") -> Dict[str, Any]:
         """
         Создаёт зашифрованный (AES-256-GCM) пакет быстрого подключения для второго ПК или Android.
+        Включает пути папок (например, D:\\Дистрибутивы), их ID и режимы синхронизации.
         """
         payload = {
             "host_device_id": self.cm.config.device_id,
@@ -739,6 +782,7 @@ class SyncService:
                 {
                     "id": f.id,
                     "label": f.label,
+                    "path": f.path,
                     "host_mode": f.sync_mode.value,
                     "recommended_client_mode": (
                         SyncMode.SEND_ONLY.value
@@ -763,10 +807,28 @@ class SyncService:
         host_id = payload["host_device_id"]
         host_name = payload.get("host_device_name", "Главный ПК")
         peer = self.add_peer_device(host_name, host_id, DeviceRole.HOME_MASTER)
+
+        # Автоматически добавляем или обновляем папки из приглашения (например, D:\Дистрибутивы) на втором ПК
+        imported_folders = payload.get("folders", [])
+        for f_info in imported_folders:
+            fid = f_info.get("id")
+            if not fid:
+                continue
+            existing = next((x for x in self.cm.config.folders if x.id == fid), None)
+            if not existing:
+                self.add_or_update_folder(
+                    {
+                        "id": fid,
+                        "label": f_info.get("label", fid),
+                        "path": f_info.get("path"),
+                        "sync_mode": f_info.get("recommended_client_mode", SyncMode.SEND_RECEIVE.value),
+                        "encryption_enabled": f_info.get("encryption_enabled", False),
+                    }
+                )
         return {
             "imported": True,
             "peer": peer.model_dump(),
-            "folders_configured": len(payload.get("folders", [])),
+            "folders_configured": len(imported_folders),
             "payload": payload,
         }
 

@@ -65,3 +65,17 @@ def test_api_full_workflow(tmp_path: Path) -> None:
     )
     assert r_imp.status_code == 200
     assert r_imp.json()["imported"]["imported"] is True
+
+    # 5. Добавление пользовательской папки (например, Дистрибутивы) с детерминированным ID
+    dist_path = str(tmp_path / "Дистрибутивы")
+    r_add = client.post(
+        "/api/folders",
+        json={
+            "label": "Дистрибутивы",
+            "path": dist_path,
+            "sync_mode": "sendreceive",
+        },
+    )
+    assert r_add.status_code == 200
+    assert r_add.json()["folder"]["id"] == "folder-distributivy"
+    assert r_add.json()["folder"]["path"] == dist_path

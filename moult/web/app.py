@@ -11,7 +11,11 @@ from pydantic import BaseModel
 
 from moult.engine.sync_service import SyncService
 from moult.models import DeviceRole, SecurityProfile
-from moult.platform.windows_integration import open_in_file_manager, set_windows_autostart
+from moult.platform.windows_integration import (
+    open_in_file_manager,
+    pick_folder_dialog,
+    set_windows_autostart,
+)
 from moult.security.certificates import validate_device_id
 
 
@@ -109,6 +113,16 @@ def create_app(service: Optional[SyncService] = None) -> FastAPI:
             "folder": folder.model_dump(),
             "overview": svc.get_dashboard_overview(),
         }
+
+    @app.delete("/api/folders/{folder_id}")
+    def delete_folder_endpoint(folder_id: str) -> Dict[str, Any]:
+        svc.delete_folder(folder_id)
+        return {"deleted": True, "overview": svc.get_dashboard_overview()}
+
+    @app.post("/api/system/pick-folder")
+    def pick_folder_endpoint() -> Dict[str, Any]:
+        chosen = pick_folder_dialog("D:\\")
+        return {"selected_path": chosen}
 
     @app.post("/api/folders/{folder_id}/sync")
     def sync_single_folder(folder_id: str) -> Dict[str, Any]:

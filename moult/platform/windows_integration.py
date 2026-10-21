@@ -42,6 +42,31 @@ def open_in_file_manager(target_path: str | Path) -> Dict[str, Any]:
         return {"opened": False, "platform": platform.system(), "path": str(path), "error": str(exc)}
 
 
+def pick_folder_dialog(initial_dir: str = "D:\\") -> Optional[str]:
+    """
+    Открывает стандартное окно выбора папки Windows (Обзор папок).
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        start_dir = initial_dir if Path(initial_dir).exists() else str(Path.cwd())
+        selected = filedialog.askdirectory(
+            parent=root,
+            initialdir=start_dir,
+            title="Выберите папку для синхронизации (например, D:\\Дистрибутивы)",
+        )
+        root.destroy()
+        if selected:
+            return str(Path(selected))
+    except Exception:
+        pass
+    return None
+
+
 def get_windows_autostart_status() -> bool:
     """
     Проверяет наличие записи автозапуска в реестре Windows (HKCU\\...\\Run).

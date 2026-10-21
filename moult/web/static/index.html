@@ -133,26 +133,37 @@
           <button class="btn btn-outline" id="btnShowAddFolder">+ Добавить свою папку</button>
         </div>
 
-        <!-- Форма добавления новой папки -->
+        <!-- Форма добавления / изменения папки -->
         <div id="addFolderModal" class="card form-card hidden">
-          <h3>Добавить новую папку для синхронизации</h3>
+          <h3 id="folderModalTitle">Добавить или изменить папку синхронизации</h3>
           <div class="form-grid">
             <div>
-              <label>Название папки</label>
-              <input type="text" id="newFolderLabel" placeholder="Например: Проекты и чертежи" />
+              <label>Путь к папке на этом ПК (например: <code>D:\Дистрибутивы</code>)</label>
+              <div style="display:flex; gap:8px;">
+                <input type="text" id="newFolderPath" placeholder="Например: D:\Дистрибутивы" />
+                <button type="button" class="btn btn-secondary" id="btnPickFolderNative" style="white-space:nowrap;">
+                  📂 Обзор...
+                </button>
+              </div>
+            </div>
+            <div>
+              <label>Название папки в списке</label>
+              <input type="text" id="newFolderLabel" placeholder="Например: Дистрибутивы" />
             </div>
             <div>
               <label>Режим синхронизации (как в Dropsync)</label>
               <select id="newFolderMode">
-                <option value="sendreceive">↔ Двусторонняя (Send &amp; Receive)</option>
+                <option value="sendreceive">↔ Двусторонняя синхронизация (Send &amp; Receive)</option>
                 <option value="sendonly">→ Только отправка / Слив файлов (Send Only)</option>
                 <option value="receiveonly">← Только приём / Мастер-копия (Receive Only)</option>
               </select>
             </div>
             <div>
-              <label>Локальный путь на ПК (опционально)</label>
-              <input type="text" id="newFolderPath" placeholder="Автоматически в папке Moult Диск" />
+              <label>Общий ID папки (должен совпадать на обоих ПК — заполняется автоматически)</label>
+              <input type="text" id="newFolderId" placeholder="Автоматически (напр. folder-distributivy)" />
             </div>
+          </div>
+          <div class="form-grid single-col">
             <div>
               <label>Политика хранения старых версий</label>
               <select id="newFolderVersioning">
@@ -172,7 +183,7 @@
             </label>
           </div>
           <div class="form-actions">
-            <button class="btn btn-primary" id="btnCreateFolder">Создать папку</button>
+            <button class="btn btn-primary" id="btnCreateFolder">💾 Сохранить папку</button>
             <button class="btn btn-secondary" id="btnCancelFolder">Отмена</button>
           </div>
         </div>
