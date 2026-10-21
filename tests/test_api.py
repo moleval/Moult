@@ -4,8 +4,15 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from moult.config import ConfigManager
+from moult.desktop.tray_app import create_pil_tray_icon
 from moult.engine.sync_service import SyncService
 from moult.web.app import create_app
+
+
+def test_tray_icon_generation() -> None:
+    icon_img = create_pil_tray_icon()
+    assert icon_img.size == (64, 64)
+    assert icon_img.mode == "RGBA"
 
 
 def test_api_full_workflow(tmp_path: Path) -> None:
